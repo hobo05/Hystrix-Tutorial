@@ -1,12 +1,16 @@
 package com.sample.commands;
 
-import java.util.HashMap;
-import java.util.Map;
-
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.netflix.config.DynamicPropertyFactory;
+import com.netflix.hystrix.HystrixCommand;
+import com.netflix.hystrix.HystrixCommandGroupKey;
+import com.netflix.hystrix.HystrixCommandProperties;
+import com.netflix.hystrix.exception.HystrixTimeoutException;
+import com.sample.utils.RequestScopeObject;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.conn.ConnectTimeoutException;
@@ -15,24 +19,20 @@ import org.apache.http.params.BasicHttpParams;
 import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.util.EntityUtils;
-
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.netflix.config.DynamicPropertyFactory;
-import com.netflix.hystrix.HystrixCommand;
-import com.netflix.hystrix.HystrixCommandGroupKey;
-import com.netflix.hystrix.HystrixCommandProperties;
-import com.netflix.hystrix.exception.HystrixTimeoutException;
-//import com.netflix.hystrix.exception.HystrixTimeoutException;
-import com.sample.utils.RequestScopeObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+//import com.netflix.hystrix.exception.HystrixTimeoutException;
 
 
 @SuppressWarnings("deprecation")
 public final class WeatherCommand extends HystrixCommand<Map<String, Double>> {
+    private static final Logger logger = LoggerFactory.getLogger(WeatherCommand.class);
     private final static String QUERY_FORMAT = "/data/2.5/weather?zip=%s,us";
-    ;
     private final String query;
     private final static Gson gson = new Gson();
 
@@ -52,7 +52,7 @@ public final class WeatherCommand extends HystrixCommand<Map<String, Double>> {
     @Override
     protected Map<String, Double> run() throws IOException, HystrixTimeoutException {
         //Print the value in the request context
-        System.out.println("Request Scope Object = " + RequestScopeObject.get());
+        logger.info("Request Scope Object = {}", RequestScopeObject.get());
 
 
         Map<String, Object> retMap = null;
@@ -65,7 +65,7 @@ public final class WeatherCommand extends HystrixCommand<Map<String, Double>> {
                 .getIntProperty("com.intuit.external.weather.port", 80)
                 .get();
 
-        //System.out.println(url + ":" + port);
+        //logger.info(url + ":" + port);
         HttpHost target = new HttpHost(host, port, "http");
 
 

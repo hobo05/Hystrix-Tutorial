@@ -1,28 +1,12 @@
 package com.sample;
 
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-
-import org.apache.commons.configuration.AbstractConfiguration;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-
-import static com.github.tomakehurst.wiremock.client.WireMock.*;
-
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.netflix.config.DynamicPropertyFactory;
-
 import com.netflix.hystrix.strategy.HystrixPlugins;
 import com.netflix.hystrix.strategy.concurrency.HystrixRequestContext;
 import com.sample.callable.SampleHystrixConcurrencyStrategy;
@@ -30,16 +14,36 @@ import com.sample.commands.WeatherCommand;
 import com.sample.commands.WeatherNIOCommand;
 import com.sample.logging.LoggingHelper;
 import com.sample.utils.RequestScopeObject;
-
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufInputStream;
+import io.reactivex.netty.protocol.http.client.HttpClient;
+import io.reactivex.netty.protocol.http.client.HttpClientBuilder;
+import io.reactivex.netty.protocol.http.client.HttpClientRequest;
+import io.reactivex.netty.protocol.http.client.HttpClientResponse;
+import org.apache.commons.configuration.AbstractConfiguration;
+import org.junit.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import rx.Observable;
 import rx.Subscriber;
+
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
 
 /**
  * Unit test for simple App.
  */
 public class MockWeatherTest {
-    private static final String weatherResponse = "{\"coord\":{\"lon\":-122.09,\"lat\":37.39},\"sys\":{\"message\":0.0126,\"country\":\"US\",\"sunrise\":1430744953,\"sunset\":1430794857},\"weather\":[{\"id\":800,\"main\":\"Clear\",\"description\":\"Sky is Clear\",\"icon\":\"01d\"}],\"base\":\"stations\",\"main\":{\"temp\":292.866,\"temp_min\":292.866,\"temp_max\":292.866,\"pressure\":988.1,\"sea_level\":1026.22,\"grnd_level\":988.1,\"humidity\":70},\"wind\":{\"speed\":1.38,\"deg\":243},\"clouds\":{\"all\":0},\"dt\":1430777146,\"id\":0,\"name\":\"Mountain View\",\"cod\":200}";
+    private static final Logger logger = LoggerFactory.getLogger(MockWeatherTest.class);
+    private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+    private static final String WEATHER_API_PATH = "/data/2.5/weather?zip=94040,us";
 
     private HystrixRequestContext context = null;
 
@@ -99,12 +103,12 @@ public class MockWeatherTest {
 
         context = HystrixRequestContext.initializeContext();
 
-        stubFor(get(urlEqualTo("/data/2.5/weather?zip=94040,us"))
+        stubFor(get(urlEqualTo(WEATHER_API_PATH))
                 .willReturn(aResponse()
                         .withHeader("Content-Type", "application/json")
                         .withStatus(200)
                         .withFixedDelay(1000)
-                        .withBody(weatherResponse)));
+                        .withBodyFile("weatherResponse.json")));
     }
 
 
@@ -122,6 +126,24 @@ public class MockWeatherTest {
     @Rule
     public WireMockRule wireMockRule = new WireMockRule(8080);
 
+    @Test
+    public void testRxNetty() throws IOException {
+        HttpClient<ByteBuf, ByteBuf> client = new HttpClientBuilder<ByteBuf, ByteBuf>("localhost", 8080)
+                .build();
+        String response = client.submit(HttpClientRequest.createGet(WEATHER_API_PATH))
+                .flatMap(HttpClientResponse::getContent)
+                .map(byteBuf -> {
+                    // Convert response to string
+                    ByteBufInputStream byteBufInputStream = new ByteBufInputStream(byteBuf);
+                    return new Scanner(byteBufInputStream, "utf-8").useDelimiter("\\Z").next();
+                })
+                .toBlocking()
+                .single();
+
+        JsonElement weatherApiResponse = gson.fromJson(response, JsonElement.class);
+        logger.info("weatherApiResponse={}", gson.toJson(weatherApiResponse));
+
+    }
 
     @Test
     public void testWeatherCommandSync() {
@@ -129,8 +151,8 @@ public class MockWeatherTest {
         //Get humidity
         WeatherCommand wCommand = new WeatherCommand("94040");
         Map<String, Double> map = wCommand.execute();
-        System.out.println("Sync Duration = " + (System.currentTimeMillis() - startTime));
-        map.forEach((k, v) -> System.out.println("Key : " + k + " Value : " + v));
+        logger.info("Sync Duration = " + (System.currentTimeMillis() - startTime));
+        map.forEach((k, v) -> logger.info("Key : " + k + " Value : " + v));
 
     }
 
@@ -140,27 +162,27 @@ public class MockWeatherTest {
         //Get humidity
         WeatherCommand wCommand = new WeatherCommand("94040");
         Future<Map<String, Double>> f = wCommand.queue();
-        System.out.println("Async Duration = " + (System.currentTimeMillis() - startTime));
+        logger.info("Async Duration = " + (System.currentTimeMillis() - startTime));
 
         Map<String, Double> map = f.get();
-        map.forEach((k, v) -> System.out.println("Key : " + k + " Value : " + v));
+        map.forEach((k, v) -> logger.info("Key : " + k + " Value : " + v));
 
-        System.out.println("Async Complete Duration = " + (System.currentTimeMillis() - startTime));
+        logger.info("Async Complete Duration = " + (System.currentTimeMillis() - startTime));
 
     }
 
     @Test
     public void testWeatherCommandReactive() throws InterruptedException {
-        System.out.println(Thread.currentThread().getName());
+        logger.info(Thread.currentThread().getName());
         String tid = UUID.randomUUID().toString();
-        System.out.println("Tracking id = " + tid);
+        logger.info("Tracking id = " + tid);
         RequestScopeObject.set(tid);
 
         final long startTime = System.currentTimeMillis();
 
         WeatherCommand wCommand = new WeatherCommand("94040");
         Observable<Map<String, Double>> o = wCommand.observe();
-        System.out.println("Reactive Duration = " + (System.currentTimeMillis() - startTime));
+        logger.info("Reactive Duration = " + (System.currentTimeMillis() - startTime));
         CountDownLatch latch = new CountDownLatch(1);
 
         o.subscribe(new MySubscriber(startTime, latch));
@@ -172,15 +194,15 @@ public class MockWeatherTest {
     @Test
     public void testWeatherCommandNIO() throws InterruptedException {
         String tid = UUID.randomUUID().toString();
-        System.out.println(Thread.currentThread().getName());
-        System.out.println("Tracking id = " + tid);
+        logger.info(Thread.currentThread().getName());
+        logger.info("Tracking id = " + tid);
         RequestScopeObject.set(tid);
 
         final long startTime = System.currentTimeMillis();
 
         WeatherNIOCommand wCommand = new WeatherNIOCommand("94040");
         Observable<Map<String, Double>> o = wCommand.observe();
-        System.out.println("NIO Duration = " + (System.currentTimeMillis() - startTime));
+        logger.info("NIO Duration = " + (System.currentTimeMillis() - startTime));
         CountDownLatch latch = new CountDownLatch(1);
 
         //The following code will print the Hystrix Thread Name and it will be the NIO thread in this case (not the caller thread).
@@ -200,23 +222,23 @@ public class MockWeatherTest {
 
         @Override
         public void onCompleted() {
-            System.out.println("Reactive Complete Duration = " + (System.currentTimeMillis() - startTime));
+            logger.info("Reactive Complete Duration = " + (System.currentTimeMillis() - startTime));
             latch.countDown();
         }
 
         @Override
         public void onError(Throwable arg0) {
-            System.out.println("Error Duration = " + (System.currentTimeMillis() - startTime));
-            System.out.println(arg0.getMessage());
+            logger.info("Error Duration = " + (System.currentTimeMillis() - startTime));
+            logger.info(arg0.getMessage());
             latch.countDown();
 
         }
 
         @Override
         public void onNext(Map<String, Double> arg0) {
-            System.out.println("OnNext Duration = " + (System.currentTimeMillis() - startTime));
-            System.out.println(Thread.currentThread().getName());
-            arg0.forEach((k, v) -> System.out.println("Key : " + k + " Value : " + v));
+            logger.info("OnNext Duration = " + (System.currentTimeMillis() - startTime));
+            logger.info(Thread.currentThread().getName());
+            arg0.forEach((k, v) -> logger.info("Key : " + k + " Value : " + v));
         }
     }
 

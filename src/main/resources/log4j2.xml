@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration xmlns:xi="http://www.w3.org/2001/XInclude" status="warn" monitorInterval="30">
+    <appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d{DATE} %-5level %t %logger{1} - %message%n"/>
+        </Console>
+    </appenders>
+    <Loggers>
+
+        <Root level="info">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</configuration>

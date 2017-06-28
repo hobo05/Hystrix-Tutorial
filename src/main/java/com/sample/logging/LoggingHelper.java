@@ -4,6 +4,8 @@ package com.sample.logging;
 import com.netflix.hystrix.HystrixInvokableInfo;
 import com.netflix.hystrix.HystrixRequestLog;
 import com.sample.utils.RequestScopeObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Record metrics for all Hystrix Commands for a request.   This code can be used in a servlet filter.
@@ -12,20 +14,22 @@ import com.sample.utils.RequestScopeObject;
  *
  */
 public class LoggingHelper {
+
+    private static final Logger logger = LoggerFactory.getLogger(LoggingHelper.class);
+
     public static void log() {
         for (HystrixInvokableInfo<?> hystrixCommand : HystrixRequestLog.getCurrentRequest().getAllExecutedCommands()) {
-            StringBuilder strBuilder = new StringBuilder();
-            strBuilder.append("tid=").append(RequestScopeObject.get());
-            strBuilder.append(",CommandGroup=").append(hystrixCommand.getCommandGroup().name());
-            strBuilder.append(",Command=").append(hystrixCommand.getCommandKey().name());
-            strBuilder.append(",ExecTime=").append(hystrixCommand.getExecutionTimeInMilliseconds());
-            strBuilder.append(",CircuitOpen=").append(hystrixCommand.isCircuitBreakerOpen() ? 1 : 0);
-            strBuilder.append(",Failed=").append(hystrixCommand.isFailedExecution() ? 1 : 0);
-            strBuilder.append(",TimedOut=").append(hystrixCommand.isResponseTimedOut() ? 1 : 0);
-            strBuilder.append(",ShortCircuited=").append(hystrixCommand.isResponseShortCircuited() ? 1 : 0);
-            strBuilder.append(",Successful=").append(hystrixCommand.isSuccessfulExecution() ? 1 : 0);
-            strBuilder.append(",Rejected=").append(hystrixCommand.isResponseRejected() ? 1 : 0);
-            System.out.println(strBuilder.toString());
+            String strBuilder = "tid=" + RequestScopeObject.get() +
+                    ",CommandGroup=" + hystrixCommand.getCommandGroup().name() +
+                    ",Command=" + hystrixCommand.getCommandKey().name() +
+                    ",ExecTime=" + hystrixCommand.getExecutionTimeInMilliseconds() +
+                    ",CircuitOpen=" + (hystrixCommand.isCircuitBreakerOpen() ? 1 : 0) +
+                    ",Failed=" + (hystrixCommand.isFailedExecution() ? 1 : 0) +
+                    ",TimedOut=" + (hystrixCommand.isResponseTimedOut() ? 1 : 0) +
+                    ",ShortCircuited=" + (hystrixCommand.isResponseShortCircuited() ? 1 : 0) +
+                    ",Successful=" + (hystrixCommand.isSuccessfulExecution() ? 1 : 0) +
+                    ",Rejected=" + (hystrixCommand.isResponseRejected() ? 1 : 0);
+            logger.info(strBuilder);
         }
 
     }
